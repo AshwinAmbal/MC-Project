@@ -10,12 +10,13 @@ from keras.layers import Dense
 from keras.layers import LSTM
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_squared_error
+from keras.models import load_model
 
 np.random.seed(42)
 
-path = os.path.abspath('../data')
+path = os.path.abspath('..')
 
-dataframe = pd.read_csv(os.path.join(path, 'CGMData.csv'), header=None)
+dataframe = pd.read_csv(os.path.join(path, 'data', 'CGMData.csv'), header=None)
 dataframe = dataframe.T
 dataframe = dataframe.iloc[:, 1]
 dataframe = dataframe.fillna(0)
@@ -32,7 +33,7 @@ test_size = len(dataset) - train_size
 train, test = dataset[0:train_size, :], dataset[train_size:len(dataset), :]
 # print(len(train), len(test))
 
-seqLen = 1
+seqLen = 6
 # convert an array of values into a dataset matrix
 def create_dataset(dataset, look_back=1, train=False):
     dataX, dataY = [], []
@@ -59,8 +60,10 @@ model.add(Dense(1))
 model.compile(loss='mean_squared_error', optimizer='adam')
 model.fit(trainX, trainY, epochs=10, batch_size=1, verbose=2)
 
+model.save(os.path.join(path, 'model', "mc_lstm.h5"))
 
 # make predictions
+model = load_model(os.path.join(path, 'model', "mc_lstm.h5"))
 trainPredict = model.predict(trainX)
 testPredict = model.predict(testX)
 # invert predictions
@@ -73,3 +76,17 @@ trainScore = math.sqrt(mean_squared_error(trainY[0], trainPredict[:,0]))
 print('Train Score: %.2f RMSE' % (trainScore))
 testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:,0]))
 print('Test Score: %.2f RMSE' % (testScore))
+
+
+# trainPredictPlot = np.empty_like(dataset)
+# trainPredictPlot[:, :] = np.nan
+# trainPredictPlot[seqLen:len(trainPredict)+seqLen, :] = trainPredict
+# # shift test predictions for plotting
+# testPredictPlot = np.empty_like(dataset)
+# testPredictPlot[:, :] = np.nan
+# testPredictPlot[len(trainPredict)+(seqLen*2)+1:len(dataset)-1, :] = testPredict
+# # plot baseline and predictions
+# plt.plot(scaler.inverse_transform(dataset))
+# plt.plot(trainPredictPlot)
+# plt.plot(testPredictPlot)
+# plt.show()
