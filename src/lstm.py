@@ -1,39 +1,70 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
 import os
-import math
 import tensorflow as tf
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import LSTM
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_squared_error
-from keras.models import load_model
+from sklearn.linear_model import LogisticRegression
+import pickle
+import sys
 
 np.random.seed(42)
 
 path = os.path.abspath('..')
 
-dataframe = pd.read_csv(os.path.join(path, 'data', 'CGMData.csv'), header=None)
-dataframe = dataframe.T
-dataframe = dataframe.iloc[:, 1]
-dataframe = dataframe.fillna(0)
-dataset = dataframe.values
-dataset = dataset.astype('float32')
-
-dataset = dataset.reshape(-1,1)
-
-scaler = MinMaxScaler(feature_range=(0, 1))
-dataset = scaler.fit_transform(dataset)
-
-train_size = int(len(dataset) * 0.67)
-test_size = len(dataset) - train_size
-train, test = dataset[0:train_size, :], dataset[train_size:len(dataset), :]
-# print(len(train), len(test))
-
 seqLen = 6
+regression_scaler = MinMaxScaler(feature_range=(0, 1))
+classification_scaler = MinMaxScaler(feature_range=(0, 1))
+
+def load_data(path=path):
+    cgm_df = pd.read_csv(os.path.join(path, 'data', 'CGMData.csv'), header=None)
+    cgm_df = cgm_df.T
+    cgm_df = cgm_df.iloc[:, 1]
+    cgm_df = cgm_df.fillna(0)
+    cgm_dataset = cgm_df.values
+    cgm_dataset = cgm_dataset.astype('float32')
+    cgm_dataset = cgm_dataset[::-1]
+
+    bolus_df = pd.read_csv(os.path.join(path, 'data', 'BolusData.csv'), header=None)
+    bolus_df = bolus_df.T
+    bolus_df = bolus_df.iloc[:, 1]
+    bolus_df = bolus_df.fillna(0)
+    bolus_dataset = bolus_df.values
+    bolus_dataset = bolus_dataset.astype('float32')
+    bolus_dataset = np.array([1 if val > 1 else 0 for val in bolus_dataset])
+    bolus_dataset = bolus_dataset[::-1]
+
+    cgm_dataset = cgm_dataset[:bolus_dataset.shape[0]]
+
+    return cgm_dataset, bolus_dataset
+
+
+def regression_split(cgm_dataset, train_per=0.67):
+    train_size = int(len(cgm_dataset) * train_per)
+    train, test = cgm_dataset[0:train_size], cgm_dataset[train_size:len(cgm_dataset)]
+    train = train.reshape(-1, 1)
+    test = test.reshape(-1, 1)
+    train = regression_scaler.fit_transform(train)
+    test = regression_scaler.transform(test)
+    return train, test, regression_scaler
+
+
+def classification_split(cgm_dataset, bolus_dataset, train_per=0.67):
+    train_size = int(len(cgm_dataset) * train_per)
+    cgm_train, cgm_test = cgm_dataset[0:train_size], cgm_dataset[train_size:len(cgm_dataset)]
+    bolus_train, bolus_test = bolus_dataset[0:train_size], bolus_dataset[train_size:len(bolus_dataset)]
+
+    # Scale Data
+    cgm_train = cgm_train.reshape(-1, 1)
+    cgm_train = classification_scaler.fit_transform(cgm_train)
+    cgm_test = cgm_test.reshape(-1, 1)
+    cgm_test = classification_scaler.transform(cgm_test)
+    return cgm_train, cgm_test, bolus_train, bolus_test, classification_scaler
+
+
 # convert an array of values into a dataset matrix
 def create_dataset(dataset, look_back=1, train=False):
     dataX, dataY = [], []
@@ -47,46 +78,64 @@ def create_dataset(dataset, look_back=1, train=False):
     return np.array(dataX), np.array(dataY)
 
 
-# X, y = create_dataset(dataset, look_back=seqLen)
-trainX, trainY = create_dataset(train, seqLen, train=True)
-testX, testY = create_dataset(test, seqLen, train=False)
+def regression_train():
+    # X, y = create_dataset(dataset, look_back=seqLen)
+    dataset, _ = load_data(path=path)
+    train, test, _ = regression_split(dataset)
+    trainX, trainY = create_dataset(train, seqLen, train=True)
+    trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
 
-trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
-testX = np.reshape(testX, (testX.shape[0], 1, testX.shape[1]))
+    model = Sequential()
+    model.add(LSTM(4, input_shape=(1, seqLen)))
+    model.add(Dense(1))
+    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.fit(trainX, trainY, epochs=5, batch_size=1, verbose=2)
 
-model = Sequential()
-model.add(LSTM(4, input_shape=(1, seqLen)))
-model.add(Dense(1))
-model.compile(loss='mean_squared_error', optimizer='adam')
-model.fit(trainX, trainY, epochs=10, batch_size=1, verbose=2)
-
-model.save(os.path.join(path, 'model', "mc_lstm.h5"))
-
-# make predictions
-model = load_model(os.path.join(path, 'model', "mc_lstm.h5"))
-trainPredict = model.predict(trainX)
-testPredict = model.predict(testX)
-# invert predictions
-trainPredict = scaler.inverse_transform(trainPredict)
-trainY = scaler.inverse_transform([trainY])
-testPredict = scaler.inverse_transform(testPredict)
-testY = scaler.inverse_transform([testY])
-# calculate root mean squared error
-trainScore = math.sqrt(mean_squared_error(trainY[0], trainPredict[:,0]))
-print('Train Score: %.2f RMSE' % (trainScore))
-testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:,0]))
-print('Test Score: %.2f RMSE' % (testScore))
+    model.save(os.path.join(path, 'model', "mc_lstm.h5"))
 
 
-# trainPredictPlot = np.empty_like(dataset)
-# trainPredictPlot[:, :] = np.nan
-# trainPredictPlot[seqLen:len(trainPredict)+seqLen, :] = trainPredict
-# # shift test predictions for plotting
-# testPredictPlot = np.empty_like(dataset)
-# testPredictPlot[:, :] = np.nan
-# testPredictPlot[len(trainPredict)+(seqLen*2)+1:len(dataset)-1, :] = testPredict
-# # plot baseline and predictions
-# plt.plot(scaler.inverse_transform(dataset))
-# plt.plot(trainPredictPlot)
-# plt.plot(testPredictPlot)
-# plt.show()
+def CountLabels(labels):
+    count_labels = dict()
+    for label in labels:
+        if label not in count_labels:
+            count_labels[label] = 1
+        else:
+            count_labels[label] += 1
+    return count_labels
+
+
+def BalanceDataset(data, labels):
+    labels = labels.tolist()
+    data = data.tolist()
+    count_labels = CountLabels(labels)
+    count_reqd = sys.maxsize
+    for label in count_labels:
+        count_reqd = min(count_labels[label], count_reqd)
+    count_added = {0: 0, 1: 0}
+    balanced_data = []
+    balanced_labels = []
+    for dat, lab in zip(data, labels):
+        if count_added[lab] < count_reqd:
+            balanced_data.append(dat)
+            balanced_labels.append(lab)
+            count_added[lab] += 1
+    return np.array(balanced_data), np.array(balanced_labels)
+
+
+def classification_train():
+    cgm, bolus = load_data(path=path)
+    cgm_train, _, bolus_train, _, _ = classification_split(cgm, bolus)
+    trainX, _ = create_dataset(cgm_train, seqLen, train=True)
+    bolus_train = bolus_train[seqLen+1:-1]
+    trainX = trainX[1:]
+    trainX, bolus_train = BalanceDataset(trainX, bolus_train)
+    clf = LogisticRegression(random_state=42)
+    clf.fit(trainX, bolus_train)
+    pickle.dump(clf,
+                open(os.path.join(path, 'model', 'classifer_model.pkl'), 'wb'))
+
+
+
+if __name__ == '__main__':
+    regression_train()
+    classification_train()

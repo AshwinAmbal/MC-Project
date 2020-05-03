@@ -22,15 +22,18 @@ cgm_final = []
 meal_final = []
 cgm[0] = [float(i) for i in cgm[0]]
 cgm[1] = [float(i) for i in cgm[1]]
+bolus[0] = [float(i) for i in bolus[0]]
 bolus[1] = [float(i) for i in bolus[1]]
 cgm[0].reverse()
 cgm[1].reverse()
+bolus[0].reverse()
 bolus[1].reverse()
 row1 = cgm[0]
 row2 = cgm[1]
+gt_date = bolus[0]
 gt = bolus[1]
 prev_end = 0
-for num in range(len(cgm[0])):
+for num in range(len(gt)):
     if num >= len(cgm[0])-1 or float(row1[num]) != float(row1[num+1]):
         cgm_final.append(row2[prev_end:num+1])
         meal_final.append([i for i, val in enumerate(gt[prev_end:num+1]) if float(val) > 1])
