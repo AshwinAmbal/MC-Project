@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 from sklearn.metrics import mean_squared_error, classification_report
 from keras.models import load_model
-from src.lstm import load_data, create_dataset, seqLen, classification_split, regression_split
+from src.train import load_data, create_dataset, seqLen, classification_split, regression_split
 import pickle
 
 np.random.seed(42)
@@ -26,7 +26,7 @@ def get_pred_samples(model, test_sample):
     return test_sample
 
 
-def make_predictions():
+def test_regress_classify():
     cgm, bolus = load_data(path=path)
 
     _, test, regression_scaler = regression_split(cgm)
@@ -47,11 +47,10 @@ def make_predictions():
     print('Test Score: %.2f RMSE' % (testScore))
 
     test = test.reshape(test.shape[0], 1)
-    testPredictPlot = np.empty_like(test)
-    testPredictPlot[:, :] = np.nan
+    test = regression_scaler.inverse_transform(test).reshape(test.shape[0])
     # plot baseline and predictions
-    plt.plot(regression_scaler.inverse_transform(test))
-    plt.plot(testPredict)
+    plt.plot(test)
+    plt.plot(testPredict.reshape(testPredict.shape[0]))
     plt.show()
 
     classification_model = pickle.load(open(os.path.join(path, 'model', 'classifer_model.pkl'), 'rb'))
@@ -72,17 +71,34 @@ def predict_regress_classify():
     _, _, _, bolus_test, classification_scaler = classification_split(cgm, bolus)
     bolus_test = bolus_test[seqLen + 1:]
     predicted_labels = []
+    predicted_regression_values = []
+
     for row in testX:
         test_sample = get_pred_samples(regression_model, row)
+        predicted_regression_values.extend(test_sample.tolist())
         predicted_sample = regression_scaler.inverse_transform(test_sample)
         predicted_sample = predicted_sample.reshape(-1, 1)
         predicted_sample = classification_scaler.transform(predicted_sample)
         predicted_sample = predicted_sample.reshape(predicted_sample.shape[0])
         prediction = classification_model.predict(np.array([predicted_sample]))
         predicted_labels.extend(prediction)
+
+    predicted_regression_values = np.array(predicted_regression_values[:-1])
+    testX = testX[1:]
+    predicted_regression_values = regression_scaler.inverse_transform(predicted_regression_values)
+    testX = regression_scaler.inverse_transform(testX)
+    predicted_regression_values = predicted_regression_values.reshape(
+                                                 predicted_regression_values.shape[0]*predicted_regression_values.shape[1])
+    testX = testX.reshape(testX.shape[0]*testX.shape[1])
+    testScore = math.sqrt(mean_squared_error(testX, predicted_regression_values))
+    print('Test Score: %.2f RMSE' % (testScore))
+    plt.plot(testX)
+    plt.plot(predicted_regression_values)
+    plt.show()
+
     print(classification_report(bolus_test, predicted_labels))
 
 
 if __name__ == '__main__':
-    # make_predictions()
-    predict_regress_classify()
+    test_regress_classify()
+    # predict_regress_classify()
