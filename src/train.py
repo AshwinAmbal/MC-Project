@@ -66,28 +66,47 @@ def classification_split(cgm_dataset, bolus_dataset, train_per=0.67):
 
 
 # convert an array of values into a dataset matrix
-def create_dataset(dataset, look_back=1, train=False):
+def create_dataset(dataset, look_back=1):
     dataX, dataY = [], []
-    # if train:
-    #     pad_prev = np.array([[0] for i in range(look_back)])
-    #     dataset = np.concatenate((pad_prev, dataset), axis=0)
     for i in range(len(dataset)-look_back-1):
         a = dataset[i:(i+look_back), 0]
+        out = dataset[i + look_back:(i + look_back + look_back), 0]
+        if len(out) < look_back:
+            break
         dataX.append(a)
         dataY.append(dataset[i + look_back, 0])
     return np.array(dataX), np.array(dataY)
 
 
-def regression_train():
-    # X, y = create_dataset(dataset, look_back=seqLen)
+def create_dataset_multi_feature(dataset, look_back=1):
+    dataX, dataY = [], []
+    for i in range(len(dataset)-look_back):
+        a = dataset[i:(i+look_back), 0]
+        out = dataset[i + look_back:(i + look_back + look_back), 0]
+        if len(out) < look_back:
+            break
+        dataX.append(a)
+        dataY.append(out)
+    return np.array(dataX), np.array(dataY)
+
+
+def regression_train(multi_feature_pred=False):
     dataset, _ = load_data(path=path)
     train, test, _ = regression_split(dataset)
-    trainX, trainY = create_dataset(train, seqLen, train=True)
+    if multi_feature_pred:
+        trainX, trainY = create_dataset_multi_feature(train, seqLen)
+    else:
+        trainX, trainY = create_dataset(train, seqLen)
     trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
-
+    n_timesteps, n_features, n_outputs = trainX.shape[2], trainX.shape[1], trainY.shape[1]
     model = Sequential()
-    model.add(LSTM(4, input_shape=(1, seqLen)))
-    model.add(Dense(1))
+    if multi_feature_pred:
+        model.add(LSTM(200, activation='relu', input_shape=(n_features, n_timesteps)))
+        model.add(Dense(100, activation='relu'))
+        model.add(Dense(n_outputs))
+    else:
+        model.add(LSTM(50, activation='relu', input_shape=(n_features, n_timesteps)))
+        model.add(Dense(n_outputs, activation='relu'))
     model.compile(loss='mean_squared_error', optimizer='adam')
     model.fit(trainX, trainY, epochs=5, batch_size=1, verbose=2)
 
@@ -125,9 +144,9 @@ def BalanceDataset(data, labels):
 def classification_train():
     cgm, bolus = load_data(path=path)
     cgm_train, _, bolus_train, _, _ = classification_split(cgm, bolus)
-    trainX, _ = create_dataset(cgm_train, seqLen, train=True)
-    bolus_train = bolus_train[seqLen+1:-1]
+    trainX, _ = create_dataset_multi_feature(cgm_train, seqLen)
     trainX = trainX[1:]
+    bolus_train = bolus_train[seqLen-1:trainX.shape[0]+seqLen-1]
     trainX, bolus_train = BalanceDataset(trainX, bolus_train)
     clf = LogisticRegression(random_state=42)
     clf.fit(trainX, bolus_train)
@@ -135,7 +154,6 @@ def classification_train():
                 open(os.path.join(path, 'model', 'classifer_model.pkl'), 'wb'))
 
 
-
 if __name__ == '__main__':
-    regression_train()
+    regression_train(multi_feature_pred=True)
     classification_train()
