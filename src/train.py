@@ -9,7 +9,9 @@ from keras.layers import LSTM
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 import pickle
+import matplotlib.pyplot as plt
 import sys
+import random
 
 np.random.seed(42)
 
@@ -130,30 +132,67 @@ def BalanceDataset(data, labels):
     count_reqd = sys.maxsize
     for label in count_labels:
         count_reqd = min(count_labels[label], count_reqd)
+    count_reqd *= 4
     count_added = {0: 0, 1: 0}
     balanced_data = []
     balanced_labels = []
-    for dat, lab in zip(data, labels):
-        if count_added[lab] < count_reqd:
-            balanced_data.append(dat)
-            balanced_labels.append(lab)
-            count_added[lab] += 1
+    flag = True
+    while flag:
+        for dat, lab in zip(data, labels):
+            if count_added[lab] < count_reqd:
+                balanced_data.append(dat)
+                balanced_labels.append(lab)
+                count_added[lab] += 1
+        flag = False
+        for lab in count_added:
+            if count_added[lab] < count_reqd:
+                flag = True
+                break
     return np.array(balanced_data), np.array(balanced_labels)
+
+
+def ShuffleData(train, labels):
+    index = [i for i in range(len(train))]
+    vals = random.sample(index, len(train))
+    shuffled_train = []
+    shuffled_labels = []
+    for index in vals:
+        shuffled_train.append(train[index])
+        shuffled_labels.append(labels[index])
+    return np.array(shuffled_train), np.array(shuffled_labels)
+
 
 
 def classification_train():
     cgm, bolus = load_data(path=path)
-    cgm_train, _, bolus_train, _, _ = classification_split(cgm, bolus)
+    cgm_train, _, bolus_train, _, classification_scaler = classification_split(cgm, bolus)
     trainX, _ = create_dataset_multi_feature(cgm_train, seqLen)
     trainX = trainX[1:]
     bolus_train = bolus_train[seqLen-1:trainX.shape[0]+seqLen-1]
     trainX, bolus_train = BalanceDataset(trainX, bolus_train)
-    clf = LogisticRegression(random_state=42)
-    clf.fit(trainX, bolus_train)
-    pickle.dump(clf,
-                open(os.path.join(path, 'model', 'classifer_model.pkl'), 'wb'))
+    # print(CountLabels(bolus_train.tolist()))
+    # vals = classification_scaler.inverse_transform(trainX)
+    # vals = [sum(row) / len(row) for row in vals]
+    # plt.scatter(vals, bolus_train)
+    # plt.show()
+    # clf = LogisticRegression(random_state=42)
+    # clf.fit(trainX, bolus_train)
+    # pickle.dump(clf,
+    #             open(os.path.join(path, 'model', 'classifer_model.pkl'), 'wb'))
+    trainX, bolus_train = ShuffleData(trainX, bolus_train)
+    # trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
+    # n_timesteps, n_features, n_outputs = trainX.shape[2], trainX.shape[1], 1
+    model = Sequential()
+    # model.add(LSTM(150, activation='sigmoid', input_shape=(n_features, n_timesteps)))
+    model.add(Dense(60, input_dim=seqLen, activation='relu'))
+    model.add(Dense(30, activation='relu'))
+    model.add(Dense(1, activation='sigmoid'))
+
+    model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+    model.fit(trainX, bolus_train, epochs=100, batch_size=8, verbose=2)
+    model.save(os.path.join(path, 'model', "mc_lstm_classification.h5"))
 
 
 if __name__ == '__main__':
-    regression_train(multi_feature_pred=True)
+    # regression_train(multi_feature_pred=True)
     classification_train()

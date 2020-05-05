@@ -4,7 +4,7 @@ import tensorflow as tf
 import math
 import matplotlib.pyplot as plt
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-from sklearn.metrics import mean_squared_error, classification_report
+from sklearn.metrics import mean_squared_error, classification_report, accuracy_score
 from keras.models import load_model
 from src.train import load_data, create_dataset, seqLen, classification_split, regression_split, create_dataset_multi_feature
 import pickle
@@ -52,12 +52,21 @@ def test_regress_classify():
     plt.plot(testPredict.reshape(testPredict.shape[0]))
     plt.show()
 
-    classification_model = pickle.load(open(os.path.join(path, 'model', 'classifer_model.pkl'), 'rb'))
+    # classification_model = pickle.load(open(os.path.join(path, 'model', 'classifer_model.pkl'), 'rb'))
     _, cgm_test, _, bolus_test, classification_scaler = classification_split(cgm, bolus)
     testX, _ = create_dataset_multi_feature(cgm_test, seqLen)
     testX = testX[1:]
-    bolus_test = bolus_test[seqLen-1:testX.shape[0] + seqLen - 1]
+    # testX = np.reshape(testX, (testX.shape[0], 1, testX.shape[1]))
+    classification_model = load_model(os.path.join(path, 'model', "mc_lstm_classification.h5"))
     bolus_pred = classification_model.predict(testX)
+    # vals = classification_scaler.inverse_transform(testX)
+    # vals = [sum(row) / len(row) for row in vals]
+    bolus_test = bolus_test[seqLen-1:testX.shape[0] + seqLen - 1]
+    bolus_pred = [1 if row[0] > 0.5 else 0 for row in bolus_pred]
+    # bolus_test = []
+    # bolus_pred = classification_model.predict(testX)
+    # bolus_pred = [1 if val >= 100 else 0 for val in vals]
+
     print(classification_report(bolus_test, bolus_pred))
 
 
@@ -103,7 +112,6 @@ def predict_regress_classify(multi_feature_pred=False):
     plt.show()
 
     classification_train_data = classification_scaler.transform(regression_predictions)
-    # classification_train_data = classification_train_data.reshape(classification_train_data.shape[0])
     prediction = classification_model.predict(classification_train_data)
     predicted_labels.extend(prediction)
 
@@ -111,5 +119,5 @@ def predict_regress_classify(multi_feature_pred=False):
 
 
 if __name__ == '__main__':
-    # test_regress_classify()
-    predict_regress_classify(multi_feature_pred=False)
+    test_regress_classify()
+    # predict_regress_classify(multi_feature_pred=True)
