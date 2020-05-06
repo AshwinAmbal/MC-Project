@@ -98,12 +98,13 @@ def regression_train(multi_feature_pred=False):
     else:
         trainX, trainY = create_dataset(train, seqLen)
     trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
-    n_timesteps, n_features, n_outputs = trainX.shape[2], trainX.shape[1], trainY.shape[1]
+    n_outputs = trainY.shape[1] if multi_feature_pred else 1
+    n_timesteps, n_features = trainX.shape[2], trainX.shape[1]
     model = Sequential()
     if multi_feature_pred:
         model.add(LSTM(200, activation='relu', input_shape=(n_features, n_timesteps)))
         model.add(Dense(100, activation='relu'))
-        model.add(Dense(n_outputs))
+        model.add(Dense(n_outputs, activation='relu'))
     else:
         model.add(LSTM(50, activation='relu', input_shape=(n_features, n_timesteps)))
         model.add(Dense(n_outputs, activation='relu'))
