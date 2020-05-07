@@ -10,6 +10,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 import pickle
 import sys
+import random
 
 np.random.seed(42)
 
@@ -142,6 +143,18 @@ def BalanceDataset(data, labels):
     return np.array(balanced_data), np.array(balanced_labels)
 
 
+def ShuffleData(train, labels):
+    index = [i for i in range(len(train))]
+    vals = random.sample(index, len(train))
+    shuffled_train = []
+    shuffled_labels = []
+    for index in vals:
+        shuffled_train.append(train[index])
+        shuffled_labels.append(labels[index])
+    return np.array(shuffled_train), np.array(shuffled_labels)
+
+
+
 def classification_train():
     cgm, bolus = load_data(path=path)
     cgm_train, _, bolus_train, _, _ = classification_split(cgm, bolus)
@@ -149,6 +162,7 @@ def classification_train():
     trainX = trainX[1:]
     bolus_train = bolus_train[seqLen-1:trainX.shape[0]+seqLen-1]
     trainX, bolus_train = BalanceDataset(trainX, bolus_train)
+    trainX, bolus_train = ShuffleData(trainX, bolus_train)
     clf = LogisticRegression(random_state=42)
     clf.fit(trainX, bolus_train)
     pickle.dump(clf,
@@ -157,4 +171,4 @@ def classification_train():
 
 if __name__ == '__main__':
     regression_train(multi_feature_pred=True)
-    classification_train()
+    # classification_train()

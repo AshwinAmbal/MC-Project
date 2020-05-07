@@ -4,7 +4,7 @@ import tensorflow as tf
 import math
 import matplotlib.pyplot as plt
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-from sklearn.metrics import mean_squared_error, classification_report
+from sklearn.metrics import mean_squared_error, classification_report, accuracy_score
 from keras.models import load_model
 from src.train import load_data, create_dataset, seqLen, classification_split, regression_split, create_dataset_multi_feature
 import pickle
@@ -25,13 +25,17 @@ def get_pred_samples(model, test_sample):
     return test_sample
 
 
-def test_regress_classify():
+def test_regress_classify(multi_feature_pred=False):
     cgm, bolus = load_data(path=path)
 
     _, test, regression_scaler = regression_split(cgm)
 
-    testX, testY = create_dataset(test, seqLen)
-    regression_model = load_model(os.path.join(path, 'model', "mc_lstm.h5"))
+    if multi_feature_pred:
+        regression_model = load_model(os.path.join(path, 'model', "mc_lstm_multi_feature.h5"))
+        testX, testY = create_dataset_multi_feature(test, seqLen)
+    else:
+        regression_model = load_model(os.path.join(path, 'model', "mc_lstm.h5"))
+        testX, testY = create_dataset(test, seqLen)
 
     # make regression predictions
     testX = np.reshape(testX, (testX.shape[0], 1, testX.shape[1]))
@@ -39,17 +43,20 @@ def test_regress_classify():
 
     # invert predictions
     testPredict = regression_scaler.inverse_transform(testPredict)
-    testY = regression_scaler.inverse_transform([testY])
-
+    if multi_feature_pred:
+        testY = regression_scaler.inverse_transform(testY)
+        testScore = math.sqrt(mean_squared_error(testY[:, 0], testPredict[:, 0]))
+    else:
+        testY = regression_scaler.inverse_transform([testY])
+        testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:, 0]))
     # calculate root mean squared error
-    testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:, 0]))
     print('Test Score: %.2f RMSE' % (testScore))
 
-    test = test.reshape(test.shape[0], 1)
-    test = regression_scaler.inverse_transform(test).reshape(test.shape[0])
     # plot baseline and predictions
-    plt.plot(test)
-    plt.plot(testPredict.reshape(testPredict.shape[0]))
+    rows = testPredict.shape[0]
+    col = testPredict.shape[1] if len(testPredict.shape) > 1 else 1
+    plt.plot(testY.reshape(rows * col))
+    plt.plot(testPredict.reshape(rows * col))
     plt.show()
 
     classification_model = pickle.load(open(os.path.join(path, 'model', 'classifer_model.pkl'), 'rb'))
@@ -58,7 +65,8 @@ def test_regress_classify():
     testX = testX[1:]
     bolus_test = bolus_test[seqLen-1:testX.shape[0] + seqLen - 1]
     bolus_pred = classification_model.predict(testX)
-    print(classification_report(bolus_test, bolus_pred))
+    # print(classification_report(bolus_test, bolus_pred))
+    print("MODEL ACCURACY: ", accuracy_score(bolus_test, bolus_pred))
 
 
 def predict_regress_classify(multi_feature_pred=False):
@@ -107,9 +115,9 @@ def predict_regress_classify(multi_feature_pred=False):
     prediction = classification_model.predict(classification_train_data)
     predicted_labels.extend(prediction)
 
-    print(classification_report(bolus_test, predicted_labels))
-
+    # print(classification_report(bolus_test, predicted_labels))
+    print("MODEL ACCURACY: ", accuracy_score(bolus_test, predicted_labels))
 
 if __name__ == '__main__':
-    # test_regress_classify()
-    predict_regress_classify(multi_feature_pred=False)
+    # test_regress_classify(multi_feature_pred=False)
+    predict_regress_classify(multi_feature_pred=True)
